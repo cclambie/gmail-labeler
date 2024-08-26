@@ -1,0 +1,233 @@
+//Copy this to a script file at script.google.com
+
+function GetLabelsForGmail(){
+
+  var labels = GmailApp.getUserLabels();
+  var ss = SpreadsheetApp.openById("###");
+  var sh1 = ss.getSheetByName("Labels By Gmail");
+
+  for (var i = 0; i < labels.length; i++) {
+    Logger.log("label: " + labels[i].getName());
+    sh1.getRange(i+1,1).setValue(labels[i].getName() );
+  }
+}
+
+function AutoLabel_Gmails() {
+  
+  var label = GmailApp.getUserLabelByName("NewImportantEmail");
+
+  //do label actions if any
+  LabelActions_Gmail()
+  LabelActions_Gmail_SS(); //check the spreadsheet for advanced rules
+
+  var threads = label.getThreads();
+
+  for (var i = 0; i < threads.length; i++) {  
+
+
+    var messages = threads[i].getMessages();
+    //do a loop through messages here, or all TO/ CCs etc.
+
+
+    AutoLabel_Gmails_ASAPIfAwaiting(threads[i]); //test if Awaiting and put into ASAP
+    
+
+    var emailaddress = messages[messages.length -1].getFrom();
+    if(emailaddress.search("<")>0) {
+      emailaddress = emailaddress.split("<")[1].split(">")[0];  
+    }
+
+    //lookup email address in sheet
+    var aLabels = "";
+    aLabels = findEmailinSheet(emailaddress);
+    if ( aLabels != false) {
+     // Logger.log(aLabels.toString() );
+
+
+      if (aLabels.search(",") > 0) {
+        aLabels = aLabels.split(",");
+      } else {
+        aLabels = aLabels.split();
+      }
+
+      //add labels as per sheet  
+      for (l = 0; l < aLabels.length; l++) {
+        var newlabelforEmail = GmailApp.getUserLabelByName(aLabels[l]);
+        newlabelforEmail.addToThread(threads[i]);
+      } 
+      
+    } else {
+      AddEmailToUnmarked(emailaddress);
+    }
+    threads[i].removeLabel(label).refresh();
+  }
+}
+
+function findEmailinSheet (emailadd) {
+  var ss = SpreadsheetApp.openById("###");
+  var sh2 = ss.getSheetByName("Email Labeling");
+  
+  var columnValues2 = sh2.getRange(1,1, sh2.getLastRow()).getValues();
+  var searchResult2 = columnValues2.findIndex(([r] ) => r == emailadd );
+  var newLabels = "";
+
+  if(searchResult2 != -1) {
+    newLabels = sh2.getRange(searchResult2+1,2).getValue();
+    return (newLabels);  
+  } 
+    return false;
+  
+}
+
+function AddEmailToUnmarked(emailadd){
+
+  var ss = SpreadsheetApp.openById("###");
+  var sh3 = ss.getSheetByName("UnMarkedEmails");
+
+  
+  var columnValues3 = sh3.getRange(1,1, sh3.getLastRow()).getValues();
+  var searchResult3 = columnValues3.findIndex(([r]) => r == emailadd);
+  if (searchResult3 == -1) {
+    sh3.getRange(sh3.getLastRow()+1, 1).setValue(emailadd);
+  }
+
+}
+
+function AddEmailToEmailLabeling(emailadd, labels){
+
+  var ss = SpreadsheetApp.openById("###");
+  var sh3 = ss.getSheetByName("Email Labeling");
+
+  var columnValues3 = sh3.getRange(1,1, sh3.getLastRow()).getValues();
+  var searchResult3 = columnValues3.findIndex(([r]) => r == emailadd);
+  if (searchResult3 == -1) {
+    var row = sh3.getLastRow()+1;
+    sh3.getRange(row, 1).setValue(emailadd);
+    sh3.getRange(row, 2).setValue(convertLabelsToString(labels));
+  }
+
+}
+
+function AutoLabel_Gmails_ASAP() {
+  
+  var label = GmailApp.getUserLabelByName("@aToDo/_ASAP");
+
+  var threads = label.getThreads();
+
+  for (var i = 0; i < threads.length; i++) {  
+     var messages = threads[i].getMessages();
+
+    //get current labels, so apply them to future messages
+    var labels = threads[i].getLabels();
+
+    //do a loop through messages here, or all TO/ CCs etc.
+    
+    var emailaddress = messages[messages.length -1].getFrom();
+    if(emailaddress.search("<")>0) {
+      emailaddress = emailaddress.split("<")[1].split(">")[0];  
+    }
+
+    if(findEmailinSheet(emailaddress) == false ) {
+       AddEmailToEmailLabeling(emailaddress, labels);
+    }
+
+  }
+}
+
+function AutoLabel_Gmails_LabelLearn() {
+  
+  var label = GmailApp.getUserLabelByName("LabelsLearn");
+
+  var threads = label.getThreads();
+
+  for (var i = 0; i < threads.length; i++) {  
+     var messages = threads[i].getMessages();
+
+     //get current labels, so apply them to future messages
+      var labels = threads[i].getLabels();
+
+    //do a loop through messages here, or all TO/ CCs etc.
+    for (var m = 0; m < messages.length; m++) {
+
+      var emailaddress = messages[m].getFrom();
+      if(emailaddress.search("<")>0) {
+        emailaddress = emailaddress.split("<")[1].split(">")[0];  
+      }
+
+      if(findEmailinSheet(emailaddress) == false ) {
+        AddEmailToEmailLabeling(emailaddress, labels);    
+      }
+    } //end loop inner
+    
+    threads[i].removeLabel(label).refresh();
+
+  }
+}
+
+function AutoLabel_Gmails_NewMail() {
+  
+  var label = GmailApp.getUserLabelByName("NewMail");
+  var dLabel = GmailApp.getUserLabelByName("FiledMail");
+
+  var dFolder = DriveApp.getFolderById("###");
+
+  var threads = label.getThreads();
+
+  for (var i = 0; i < threads.length; i++) {  
+
+    
+
+    var messages = threads[i].getMessages();
+    var attch = messages[messages.length -1].getAttachments()
+
+    for (a = 0; a < attch.length; a++) {
+      //add each attachment to drive folder
+      dFolder.createFile(attch[a].copyBlob() );
+    }
+
+    threads[i].addLabel(dLabel);
+
+    // now remove the label
+     threads[i].removeLabel(label).refresh();
+
+  }
+}
+
+function ContactsLookup(){
+  var strEmail = "###";
+
+  var vContact = ContactsApp.findByEmailAddress(strEmail);
+
+  Logger.log( vContact.toString() );
+
+  var vLabels = vContact.getCustomFields;
+
+  for (var i=0; i < vLabels.length; i++) {
+
+    if (vLabels[i].getValue = "Labels") {
+      Logger.log( "Labels: " +  vLabels[i].getValue);
+
+    }
+
+  }
+
+
+}
+
+
+function AutoLabel_Gmails_ASAPIfAwaiting(thread) {
+  
+  var ASAPlabel = GmailApp.getUserLabelByName("@aToDo/_ASAP");
+  var AwaitingLabel = GmailApp.getUserLabelByName("@aToDo/0.1 Awaiting Urgent Reply");
+  
+    //get current labels, so apply them to future messages
+  var labels = thread.getLabels();
+
+  //do a loop through labels here
+  for (var l = 0; l< labels.length; l++) {
+    if (labels[l] == AwaitingLabel) {
+      thread.addLabel(ASAPlabel).refresh();
+      thread.removeLabel(AwaitingLabel).refresh();
+    }
+  }
+}
